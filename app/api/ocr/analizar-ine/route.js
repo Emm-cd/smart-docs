@@ -2,7 +2,7 @@
 import { createClient } from "@/app/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-const OCR_API_URL = process.env.OCR_API_URL || "http://127.0.0.1:8000";
+const NEXT_PUBLIC_OCR_API_URL = process.env.NEXT_PUBLIC_OCR_API_URL || "http://127.0.0.1:8000";
 
 export async function POST(request) {
   try {
@@ -90,7 +90,7 @@ export async function POST(request) {
       ocrForm.append("frente",  new Blob([bufFrente],  { type: mimeF }), filenameF);
       ocrForm.append("reverso", new Blob([bufReverso], { type: mimeR }), reverso.name);
 
-      fetch(`${OCR_API_URL}/api/ocr/analizar-ine-y-actualizar`, {
+      fetch(`${NEXT_PUBLIC_OCR_API_URL}/api/ocr/analizar-ine-y-actualizar`, {
         method:  "POST",
         headers: {
           Authorization: `Bearer ${jwt}`,

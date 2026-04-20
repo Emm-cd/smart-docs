@@ -2,7 +2,7 @@
 import { createClient } from "@/app/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-const OCR_API_URL = process.env.OCR_API_URL || "http://127.0.0.1:8000";
+const NEXT_PUBLIC_OCR_API_URL = process.env.NEXT_PUBLIC_OCR_API_URL || "http://127.0.0.1:8000";
 
 function limpiarNombreArchivo(nombre) {
   return nombre
@@ -108,7 +108,7 @@ export async function POST(request) {
         .eq("id", uid)
         .single();
 
-      fetch(`${OCR_API_URL}/api/ocr/analizar-y-actualizar`, {
+      fetch(`${NEXT_PUBLIC_OCR_API_URL}/api/ocr/analizar-y-actualizar`, {
         method:  "POST",
         headers: {
           Authorization:  `Bearer ${jwt}`,
