@@ -156,11 +156,6 @@ export default function RegistroPage() {
   const [showPwd, setShowPwd]                   = useState(false);
   const [showConfirm, setShowConfirm]           = useState(false);
 
-  // ======== NUEVOS ESTADOS PARA MOSTRAR/OCULTAR AVISO Y POLÍTICA ========
-  const [mostrarAviso, setMostrarAviso] = useState(false);
-  const [mostrarPolitica, setMostrarPolitica] = useState(false);
-  // =====================================================================
-
   const [form, setForm] = useState({
     nombre: "", apellido: "", email: "", username: "",
     password: "", confirmPassword: "",
@@ -199,7 +194,7 @@ export default function RegistroPage() {
       if (!form.password)                e.password = "Contraseña requerida";
       else if (form.password.length < 6) e.password = "Mínimo 6 caracteres";
       if (form.password !== form.confirmPassword) e.confirmPassword = "Las contraseñas no coinciden";
-      if (!form.aceptaTerminos)  e.aceptaTerminos  = "Debes aceptar los términos y el aviso de privacidad";
+      if (!form.aceptaTerminos)  e.aceptaTerminos  = "Debes aceptar los términos";
       if (!form.aceptaVeracidad) e.aceptaVeracidad = "Confirma la veracidad";
     }
     setErrors(e);
@@ -218,17 +213,7 @@ export default function RegistroPage() {
     const { error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
-      options: {
-        data: {
-          nombre: form.nombre,
-          apellido: form.apellido,
-          username: form.username,
-          // ======== GUARDAR ACEPTACIÓN DE PRIVACIDAD ========
-          acepta_privacidad: true,
-          fecha_aceptacion: new Date().toISOString(),
-          // ================================================
-        }
-      },
+      options: { data: { nombre: form.nombre, apellido: form.apellido, username: form.username } },
     });
 
     if (authError) {
@@ -320,114 +305,25 @@ export default function RegistroPage() {
             </button>
           }
         />
-
-        {/* ================================================================ */}
-        {/* NUEVA SECCIÓN DE PROTECCIÓN DE DATOS PERSONALES (LFPDPPP)        */}
-        {/* ================================================================ */}
-        <div className="space-y-4">
-          {/* Recuadro informativo */}
-          <div className="rounded-[12px] border p-4 text-xs text-slate-500 leading-relaxed"
-            style={{ borderColor: "#BFDBFE", background: "rgba(239,246,255,0.5)" }}>
-            <strong className="text-slate-700">Protección de Datos Personales (LFPDPPP)</strong>
-            <p className="mt-1">
-              SmartDocs trata tus datos personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de Particulares.
-              Tienes derecho a conocer, rectificar, cancelar u oponerte al tratamiento de tus datos (derechos ARCO).
-            </p>
-          </div>
-
-          {/* Checkbox de aceptación principal */}
-          <label className="flex items-start gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              name="aceptaTerminos"
-              checked={form.aceptaTerminos}
-              onChange={handleChange}
-              className="mt-0.5 w-4 h-4 rounded border-blue-200 accent-blue-600 cursor-pointer shrink-0"
-            />
-            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">
-              Acepto los <strong>Términos y Condiciones</strong>, el{" "}
-              <button
-                type="button"
-                onClick={() => setMostrarAviso(!mostrarAviso)}
-                className="text-[#2563EB] underline hover:text-[#1D4ED8] transition-colors"
-              >
-                Aviso de Privacidad
-              </button>{" "}
-              y la{" "}
-              <button
-                type="button"
-                onClick={() => setMostrarPolitica(!mostrarPolitica)}
-                className="text-[#2563EB] underline hover:text-[#1D4ED8] transition-colors"
-              >
-                Política de Privacidad
-              </button>
-              , conforme a la LFPDPPP.
-            </span>
-          </label>
-          {errors.aceptaTerminos && (
-            <p className="text-xs text-red-500 pl-7">{errors.aceptaTerminos}</p>
-          )}
-
-          {/* Desplegable: Aviso de Privacidad */}
-          {mostrarAviso && (
-            <div
-              className="rounded-[12px] border p-4 text-xs text-slate-700 leading-relaxed max-h-48 overflow-y-auto bg-white"
-              style={{ borderColor: "#BFDBFE", background: "white" }}
-            >
-              <strong className="text-slate-800 block mb-1">📄 AVISO DE PRIVACIDAD</strong>
-              <p>
-                SmartDocs, con domicilio en San Juan del Río, Querétaro, es responsable del tratamiento de sus datos personales.
-                <br /><br />
-                <strong>Datos recopilados:</strong> Nombre, apellido, correo, usuario y documentos subidos.<br />
-                <strong>Finalidad:</strong> Autenticación, procesamiento de documentos (OCR), gestión de tickets y notificaciones.<br />
-                <strong>Transferencias:</strong> Sus datos se comparten con Supabase (USA), Railway (USA) y Vercel (USA) para la prestación del servicio.<br />
-                <strong>Derechos ARCO:</strong> Puede ejercer sus derechos enviando un correo a: <strong>privacidad@smartdocs.com</strong>
-                <br /><br />
-                <em className="text-slate-400">Última actualización: Mayo 2026</em>
-              </p>
-            </div>
-          )}
-
-          {/* Desplegable: Política de Privacidad */}
-          {mostrarPolitica && (
-            <div
-              className="rounded-[12px] border p-4 text-xs text-slate-700 leading-relaxed max-h-48 overflow-y-auto bg-white"
-              style={{ borderColor: "#BFDBFE", background: "white" }}
-            >
-              <strong className="text-slate-800 block mb-1">📄 POLÍTICA DE PRIVACIDAD</strong>
-              <p>
-                <strong>1. Responsable:</strong> SmartDocs<br />
-                <strong>2. Datos personales tratados:</strong> Los estrictamente necesarios para la prestación del servicio.<br />
-                <strong>3. Finalidad:</strong> Gestión de usuarios, procesamiento de documentos, atención al cliente.<br />
-                <strong>4. Medidas de seguridad:</strong> Cifrado HTTPS, autenticación con Supabase (bcrypt), RLS en base de datos.<br />
-                <strong>5. Plazos de retención:</strong> Datos de cuenta: hasta cancelación. Documentos: 5 años (fines fiscales).<br />
-                <strong>6. Derechos ARCO:</strong> Acceso, rectificación, cancelación y oposición en <strong>privacidad@smartdocs.com</strong>
-                <br /><br />
-                <em className="text-slate-400">Última actualización: Mayo 2026</em>
-              </p>
-            </div>
-          )}
-
-          {/* Checkbox de veracidad (existente) */}
-          <label className="flex items-start gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              name="aceptaVeracidad"
-              checked={form.aceptaVeracidad}
-              onChange={handleChange}
-              className="mt-0.5 w-4 h-4 rounded border-blue-200 accent-blue-600 cursor-pointer shrink-0"
-            />
-            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">
-              Confirmo que la información proporcionada es verídica y completa.
-            </span>
-          </label>
-          {errors.aceptaVeracidad && (
-            <p className="text-xs text-red-500 pl-7">{errors.aceptaVeracidad}</p>
-          )}
+        <div className="rounded-[12px] border p-4 text-xs text-slate-500 leading-relaxed max-h-28 overflow-y-auto"
+          style={{ borderColor: "#BFDBFE", background: "rgba(239,246,255,0.5)" }}>
+          <strong className="text-slate-700">Términos y Condiciones</strong>
+          <p className="mt-1">Al registrarte en SmartDocs aceptas nuestros términos de servicio y política de privacidad. Nos comprometemos a proteger tus datos de acuerdo con la legislación vigente. No compartiremos tu información con terceros sin tu consentimiento explícito. Tienes derecho a acceder, modificar o eliminar tus datos en cualquier momento.</p>
         </div>
-        {/* ================================================================ */}
-        {/* FIN DE LA NUEVA SECCIÓN                                           */}
-        {/* ================================================================ */}
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" name="aceptaTerminos" checked={form.aceptaTerminos} onChange={handleChange}
+              className="mt-0.5 w-4 h-4 rounded border-blue-200 accent-blue-600 cursor-pointer shrink-0"/>
+            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">Acepto los términos y condiciones y política de privacidad</span>
+          </label>
+          {errors.aceptaTerminos && <p className="text-xs text-red-500 pl-7">{errors.aceptaTerminos}</p>}
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" name="aceptaVeracidad" checked={form.aceptaVeracidad} onChange={handleChange}
+              className="mt-0.5 w-4 h-4 rounded border-blue-200 accent-blue-600 cursor-pointer shrink-0"/>
+            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">Confirmo que la información proporcionada es verídica y completa</span>
+          </label>
+          {errors.aceptaVeracidad && <p className="text-xs text-red-500 pl-7">{errors.aceptaVeracidad}</p>}
+        </div>
       </div>
     );
 

@@ -17,7 +17,7 @@ async function fetchConTimeout(url, opciones, ms) {
     clearTimeout(id);
   }
 }
-
+      
 export async function POST(request) {
   try {
     // ── 1. Auth ──────────────────────────────────────────────────────────
