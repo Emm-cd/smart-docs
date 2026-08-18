@@ -93,7 +93,8 @@ export async function POST(request) {
     ocrForm.append("archivo", blob, filename);
 
     // Endpoint de FastAPI
-    const targetUrl = `${NEXT_PUBLIC_OCR_API_URL}/analizar-y-actualizar`;
+    // En app/api/ocr/analizar-documento/route.js
+    const targetUrl = `${process.env.NEXT_PUBLIC_OCR_API_URL}/api/ocr/analizar-y-actualizar`;
 
     // Ejecutamos la petición de fondo capturando cualquier error de red
     fetch(targetUrl, {
