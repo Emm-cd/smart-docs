@@ -6,14 +6,16 @@ const NEXT_PUBLIC_OCR_API_URL = process.env.NEXT_PUBLIC_OCR_API_URL || "http://1
 
 function limpiarNombreArchivo(nombre) {
   return nombre
-    .normalize("NFD") // quita acentos
+    .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "_") // espacios → _
-    .replace(/[^a-zA-Z0-9._-]/g, ""); // solo caracteres seguros
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
-
 export async function POST(request) {
+  let docData = null;
+  let uid = null;
+
   try {
     // ── 1. Auth ────────────────────────────────────────────────────────────
     const supabase = await createClient();
@@ -21,7 +23,7 @@ export async function POST(request) {
     if (authError || !user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const uid = user.id;
+    uid = user.id;
     const { data: { session } } = await supabase.auth.getSession();
     const jwt = session?.access_token;
 
@@ -29,116 +31,116 @@ export async function POST(request) {
     const formData = await request.formData();
     const archivo  = formData.get("archivo");
     if (!archivo) {
-      return NextResponse.json({ error: "No se recibió ningún archivo" }, { status: 400 });
+      return NextResponse.json({ error: "No se envió ningún archivo" }, { status: 400 });
     }
 
-    const arrayBuffer = await archivo.arrayBuffer();
-    const buffer      = Buffer.from(arrayBuffer);
-    const originalName = archivo.name;
-    const filename = limpiarNombreArchivo(originalName);
-    const extension   = filename.split(".").pop()?.toLowerCase() || "";
-    const tipoMime    = archivo.type || "application/octet-stream";
-    const tamano      = buffer.length;
+    const filename = limpiarNombreArchivo(archivo.name);
+    const buffer   = Buffer.from(await archivo.arrayBuffer());
 
-    // ── 3. Subir a Storage INMEDIATAMENTE ──────────────────────────────────
-    const timestamp   = Date.now();
-    const storagePath = `${uid}/${timestamp}_${filename}`;
-
+    // ── 3. Subir a Supabase Storage ─────────────────────────────────────────
+    const storagePath = `${uid}/${Date.now()}_${filename}`;
     const { error: storageError } = await supabase.storage
       .from("documentos")
-      .upload(storagePath, buffer, { contentType: tipoMime, upsert: false });
+      .upload(storagePath, buffer, {
+        contentType: archivo.type,
+        upsert: false,
+      });
 
     if (storageError) {
-      console.error("❌ Storage upload failed:", storageError.message);
-      return NextResponse.json({ error: "Error al subir archivo" }, { status: 500 });
+      console.error("❌ Error Supabase Storage:", storageError.message);
+      return NextResponse.json({ error: "Error al guardar el archivo" }, { status: 500 });
     }
 
-    // URL firmada de 7 días
-    const { data: signedData } = await supabase.storage
+    const { data: urlData } = supabase.storage
       .from("documentos")
-      .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-    const urlArchivo = signedData?.signedUrl || "";
+      .getPublicUrl(storagePath);
+    const urlArchivo = urlData.publicUrl;
 
-    // ── 4. Insertar registro "procesando" en documentos ────────────────────
-    const { data: docData, error: docError } = await supabase
+    // ── 4. Insertar registro inicial ("procesando") ─────────────────────────
+    const { data: newDoc, error: dbError } = await supabase
       .from("documentos")
       .insert({
-        uid_usuario:  uid,
+        uid_usuario: uid,
         filename,
         storage_path: storagePath,
         url_archivo:  urlArchivo,
         tipo_doc:     "PROCESANDO",
-        datos_extraidos: {},
-        resumen_ia:   "",
         estado:       "procesando",
-        extension,
-        tipo_mime:    tipoMime,
-        tamano,
-        vencimiento_estado: "SIN_FECHA",
-        vencimiento_alerta: false,
+        extension:    filename.split(".").pop().toLowerCase(),
+        tipo_mime:    archivo.type,
+        tamano:       buffer.length,
       })
-      .select()
+      .select("id")
       .single();
 
-    if (docError) {
-      console.error("❌ Error insertando doc:", docError.message);
+    if (dbError) {
+      console.error("❌ Error Supabase DB Insert:", dbError.message);
+      return NextResponse.json({ error: "Error en base de datos" }, { status: 500 });
     }
 
-    // ── 5. Registrar en historial ──────────────────────────────────────────
-    if (docData?.id) {
-      await supabase.from("historial_documentos").insert({
-        uid_usuario: uid,
-        doc_id:      docData.id,
-        evento:      "subido",
-        detalle:     `Archivo ${filename} subido. Procesamiento OCR en curso.`,
-      });
-    }
+    docData = newDoc;
 
-    // ── 6. Disparar OCR en background (fire-and-forget) ───────────────────
-    // NO esperamos la respuesta — el OCR actualiza el registro en segundo plano
-    // ── 6. Disparar OCR en background ───────────────────────────────
-    if (jwt && docData?.id) {
-      const ocrForm = new FormData();
-      ocrForm.append("archivo", new Blob([buffer], { type: tipoMime }), filename);
+    // ── 5. Obtener datos del perfil del usuario ──────────────────────────────
+    const { data: perfil } = await supabase
+      .from("usuarios")
+      .select("nombre, apellido, email")
+      .eq("id", uid)
+      .maybeSingle();
 
-      // Obtener perfil del usuario para el email
-      const { data: perfil } = await supabase
-        .from("usuarios")
-        .select("nombre, apellido, email")
-        .eq("id", uid)
-        .single();
+    // ── 6. Disparar OCR en FastAPI en segundo plano de forma segura ──────────
+    const ocrForm = new FormData();
+    const blob = new Blob([buffer], { type: archivo.type });
+    ocrForm.append("archivo", blob, filename);
 
-      fetch(`${NEXT_PUBLIC_OCR_API_URL}/api/ocr/analizar-y-actualizar`, {
-        method:  "POST",
-        headers: {
-          Authorization:  `Bearer ${jwt}`,
-          "X-Doc-Id":     docData.id,
-          "X-Uid":        uid,
-          "X-Email":      perfil?.email    || user.email || "",  // ← NUEVO
-          "X-Nombre":     perfil?.nombre   || "",                // ← NUEVO
-          "X-Apellido":   perfil?.apellido || "",                // ← NUEVO
-        },
-        body: ocrForm,
-      }).catch((e) => console.warn("⚠ OCR background error:", e.message));
-    }
+    // Endpoint de FastAPI
+    const targetUrl = `${NEXT_PUBLIC_OCR_API_URL}/analizar-y-actualizar`;
 
-    // ── 7. Respuesta inmediata al cliente ──────────────────────────────────
-    return NextResponse.json({
-      doc_id:        docData?.id || null,
-      storage_path:  storagePath,
-      url_archivo:   urlArchivo,
-      estado:        "procesando",
-      mensaje:       "Archivo guardado. El análisis OCR se realiza en segundo plano.",
-      // Compatibilidad con SubirDocumento.jsx
-      documento_detectado: "PROCESANDO",
-      data:          {},
-      resumen:       "",
-      vencimiento:   { estado: "SIN_FECHA", alerta: false },
-      metadata:      { filename, calidad_imagen: {}, fuente_datos_principal: "pendiente" },
+    // Ejecutamos la petición de fondo capturando cualquier error de red
+    fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "X-Doc-Id":    docData.id,
+        "X-Uid":       uid,
+        "X-Email":     perfil?.email    || user.email || "",
+        "X-Nombre":    perfil?.nombre   || "",
+        "X-Apellido":  perfil?.apellido || "",
+      },
+      body: ocrForm,
+    })
+    .then(async (res) => {
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`❌ FastAPI devolvió status ${res.status}: ${errText}`);
+      } else {
+        console.log(`✅ FastAPI recibió el documento correctamente (${docData.id})`);
+      }
+    })
+    .catch(async (e) => {
+      console.error("❌ No se pudo conectar con FastAPI:", e.message);
+      // En caso de que FastAPI esté caído, marcamos el documento con error en Supabase
+      await supabase
+        .from("documentos")
+        .update({ estado: "error", info_adicional: "Servidor OCR no disponible" })
+        .eq("id", docData.id);
     });
 
-  } catch (error) {
-    console.error("❌ Error en proxy OCR:", error);
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+    // ── 7. Respuesta inmediata al frontend ──────────────────────────────────
+    return NextResponse.json({
+      doc_id:              docData?.id || null,
+      storage_path:        storagePath,
+      url_archivo:         urlArchivo,
+      estado:              "procesando",
+      mensaje:             "Archivo guardado. El análisis OCR se realiza en segundo plano.",
+      documento_detectado: "PROCESANDO",
+      data:                {},
+      resumen:             "",
+      vencimiento:         { estado: "SIN_FECHA", alerta: false },
+      metadata:            { filename, calidad_imagen: {}, fuente_datos_principal: "pendiente" },
+    });
+
+  } catch (err) {
+    console.error("❌ Error en POST /api/ocr/analizar-documento:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

@@ -1,0 +1,12 @@
+{
+  "base_url": "https://smart-docs-amber.vercel.app",
+  "resultados": [
+    {
+      "pagina": "registro",
+      "url": "https://smart-docs-amber.vercel.app/registro",
+      "performance": 95,
+      "accessibility": 100,
+      "bestPractices": 100
+    }
+  ]
+}

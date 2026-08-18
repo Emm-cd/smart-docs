@@ -5,17 +5,18 @@ import { NextResponse } from "next/server";
 export async function GET(request, { params }) {
   try {
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id: docId } = await params;
 
     const { data: doc, error } = await supabase
       .from("documentos")
-      .select("id, estado, tipo_doc, resumen_ia, datos_extraidos, vencimiento_estado, vencimiento_alerta, filename")
-      .eq("id", id)
+      .select("*")
+      .eq("id", docId)
       .eq("uid_usuario", user.id)
       .single();
 
@@ -23,19 +24,28 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 });
     }
 
+    if (doc.estado === "completado" || doc.estado === "listo") {
+      return NextResponse.json({
+        listo: true,
+        estado: doc.estado,
+        documento: doc
+      });
+    }
+
+    if (doc.estado === "error") {
+      return NextResponse.json({
+        listo: false,
+        error: doc.error_mensaje || "Error al procesar el documento"
+      });
+    }
+
+    // Si continúa en estado "procesando"
     return NextResponse.json({
-      id:                 doc.id,
-      estado:             doc.estado,
-      tipo_doc:           doc.tipo_doc,
-      listo:              doc.estado === "procesado",
-      error:              doc.estado === "error",
-      resumen:            doc.resumen_ia || "",
-      vencimiento_estado: doc.vencimiento_estado,
-      vencimiento_alerta: doc.vencimiento_alerta,
-      filename:           doc.filename,
+      listo: false,
+      estado: "procesando"
     });
-  } catch (err) {
-    console.error("❌ Error estado documento:", err);
-    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

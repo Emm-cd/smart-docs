@@ -9,7 +9,7 @@ import {
   Upload, FileText, Eye, CreditCard, FileBadge, Download,
   Trash2, Pencil, X, Calendar, HardDrive, AlertTriangle,
   CheckCircle2, Clock, ScrollText, UserCheck, Receipt,
-  Loader2, Moon, Info, XCircle, Bot,
+  Loader2, Moon, Info, XCircle, Bot, Droplets,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +67,7 @@ const diasRestantes = (fechaVencimiento) => {
 };
 
 // Tipos de documento que no tienen fecha de vencimiento natural
+// REPORTE_DERRAME NO está aquí — tiene fecha_limite_pago calculada
 const TIPOS_SIN_VENCIMIENTO = [
   "ACTA_NACIMIENTO", "FORMATO_CURP", "CONSTANCIA_SITUACION_FISCAL",
 ];
@@ -100,6 +101,8 @@ const getDocStyle = (tipo) => {
     return { icon: <Receipt size={24} />, bg: "bg-teal-100", color: "text-teal-600", border: "border-teal-200", line: "bg-teal-400", label: "Constancia Fiscal" };
   if (t === "DECLARACION_SAT" || t.includes("DECLARACION_ANUAL") || t.includes("DECLARACION"))
     return { icon: <Receipt size={22} />, bg: "bg-red-100", color: "text-red-600", border: "border-red-200", line: "bg-red-400", label: "Declaración SAT" };
+  if (t === "REPORTE_DERRAME" || t.includes("DERRAME"))
+    return { icon: <Droplets size={24} />, bg: "bg-amber-100", color: "text-amber-600", border: "border-amber-200", line: "bg-amber-400", label: "Reporte de Derrame" };
   if (t === "PROCESANDO")
     return { icon: <Loader2 size={24} className="animate-spin" />, bg: "bg-gray-100", color: "text-gray-400", border: "border-gray-200", line: "bg-gray-300", label: "Analizando…" };
   return { icon: <FileText size={24} />, bg: "bg-gray-100", color: "text-gray-500", border: "border-gray-200", line: "bg-gray-300", label: tipo || "Otro" };
@@ -469,7 +472,13 @@ const handleRenombrar = async () => {
 
               const style          = getDocStyle(doc.tipo_doc);
               const { tieneAdvertencias } = parseCalidad(doc.calidad_imagen);
-              const estadoVencLive = calcEstadoVencimiento(doc.fecha_vencimiento);
+              // REPORTE_DERRAME: usa fecha_limite_pago (calculada) en lugar de fecha_vencimiento
+              const esDerrame = (doc.tipo_doc || "").toUpperCase() === "REPORTE_DERRAME";
+              const fechaLimitePago = esDerrame
+                ? (doc.datos_extraidos?.fecha_limite_pago?.valor || doc.datos_extraidos?.fecha_limite_pago || null)
+                : null;
+              const fechaVencEfectiva = fechaLimitePago || doc.fecha_vencimiento;
+              const estadoVencLive = calcEstadoVencimiento(fechaVencEfectiva);
               const sinVencimiento = TIPOS_SIN_VENCIMIENTO.includes((doc.tipo_doc || "").toUpperCase());
               const isVencido      = estadoVencLive === "VENCIDO";
               const isProximo      = estadoVencLive === "PROXIMO_VENCER";
@@ -498,13 +507,17 @@ const handleRenombrar = async () => {
                       <h3 className="font-semibold text-gray-800 truncate">{style.label}</h3>
                       <p className="text-sm text-gray-500 truncate">{doc.filename}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{formatFecha(doc.creado_en)}</p>
-                      {doc.fecha_vencimiento && (
+                      {fechaVencEfectiva && (
                         <span className={`inline-flex items-center gap-1 text-[11px] font-semibold mt-1.5 px-2 py-0.5 rounded-full border ${colorVenc(estadoVencLive)}`}>
                           {iconoVenc(estadoVencLive)}
-                          {isVencido ? "Vencido" : isProximo ? `${diasRestantes(doc.fecha_vencimiento)} días` : "Vigente"}
+                          {isVencido
+                            ? (esDerrame ? "Pago vencido" : "Vencido")
+                            : isProximo
+                              ? `${diasRestantes(fechaVencEfectiva)} días${esDerrame ? " pago" : ""}`
+                              : (esDerrame ? "Pago al día" : "Vigente")}
                         </span>
                       )}
-                      {sinVencimiento && !doc.fecha_vencimiento && (
+                      {sinVencimiento && !fechaVencEfectiva && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1.5 px-2 py-0.5 rounded-full border bg-green-50 text-green-600 border-green-200">
                           <CheckCircle2 size={10} /> Vigente
                         </span>
@@ -522,9 +535,15 @@ const handleRenombrar = async () => {
       {/* ── MODAL DETALLE ────────────────────────────────────────────── */}
       {selectedDoc && (() => {
         const { tieneAdvertencias, advertencias, calidadInsuficiente } = parseCalidad(selectedDoc.calidad_imagen);
-        const sinVenc    = TIPOS_SIN_VENCIMIENTO.includes((selectedDoc.tipo_doc || "").toUpperCase());
-        const estadoVenc = calcEstadoVencimiento(selectedDoc.fecha_vencimiento);
-        const datosEx    = selectedDoc.datos_extraidos || {};
+        const esDerrame       = (selectedDoc.tipo_doc || "").toUpperCase() === "REPORTE_DERRAME";
+        const sinVenc         = TIPOS_SIN_VENCIMIENTO.includes((selectedDoc.tipo_doc || "").toUpperCase());
+        const datosEx         = selectedDoc.datos_extraidos || {};
+        // REPORTE_DERRAME: fecha_limite_pago viene de datos_extraidos (calculada en backend)
+        const fechaLimitePago = esDerrame
+          ? (datosEx.fecha_limite_pago?.valor || datosEx.fecha_limite_pago || null)
+          : null;
+        const fechaVencEfectiva = fechaLimitePago || selectedDoc.fecha_vencimiento;
+        const estadoVenc      = calcEstadoVencimiento(fechaVencEfectiva);
         const fechaVigenciaSAT =
           datosEx.fecha_vigencia_linea?.valor || datosEx.fecha_vigencia_linea ||
           datosEx.vigencia?.valor             || datosEx.vigencia || null;
@@ -603,23 +622,35 @@ const handleRenombrar = async () => {
                         </span>
                       </div>
 
-                      {selectedDoc.fecha_vencimiento ? (
+                      {/* Fecha Límite de Pago — solo REPORTE_DERRAME */}
+                      {esDerrame && fechaLimitePago && (
+                        <div className="flex justify-between items-center py-2.5 text-[13px]">
+                          <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={14} /> Límite de Pago</span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${colorVenc(estadoVenc)}`}>
+                            {iconoVenc(estadoVenc)} {formatFecha(fechaLimitePago)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Fecha de vencimiento estándar — otros documentos */}
+                      {!esDerrame && selectedDoc.fecha_vencimiento && (
                         <div className="flex justify-between items-center py-2.5 text-[13px]">
                           <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={14} /> Vencimiento</span>
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${colorVenc(estadoVenc)}`}>
                             {iconoVenc(estadoVenc)} {formatFecha(selectedDoc.fecha_vencimiento)}
                           </span>
                         </div>
-                      ) : sinVenc ? (
+                      )}
+                      {!esDerrame && !selectedDoc.fecha_vencimiento && sinVenc && (
                         <div className="flex justify-between items-center py-2.5 text-[13px]">
                           <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={14} /> Vigencia</span>
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border bg-green-50 text-green-700 border-green-200">
                             <CheckCircle2 size={12} /> Vigente
                           </span>
                         </div>
-                      ) : null}
+                      )}
 
-                      {fechaVigenciaSAT && !selectedDoc.fecha_vencimiento && (
+                      {fechaVigenciaSAT && !selectedDoc.fecha_vencimiento && !esDerrame && (
                         <div className="flex justify-between items-center py-2.5 text-[13px]">
                           <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={14} /> Vigencia SAT</span>
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border bg-teal-50 text-teal-700 border-teal-200">
@@ -658,9 +689,91 @@ const handleRenombrar = async () => {
                   </div>
                 )}
 
+                {/* ── PANEL REPORTE DE DERRAME ──────────────────────────────── */}
+                {esDerrame && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Datos del Incidente</p>
+
+                    {/* Alerta de pago si aplica */}
+                    {estadoVenc === "PROXIMO_VENCER" && fechaLimitePago && (
+                      <div className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 flex items-start gap-3">
+                        <Clock size={16} className="text-yellow-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-xs font-semibold text-yellow-700 uppercase tracking-wide mb-0.5">Pago próximo a vencer</p>
+                          <p className="text-sm text-yellow-800">
+                            La fecha límite de pago es el <strong>{formatFecha(fechaLimitePago)}</strong>.
+                            Quedan <strong>{diasRestantes(fechaLimitePago)} días</strong> para realizar el pago.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {estadoVenc === "VENCIDO" && fechaLimitePago && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+                        <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-0.5">Pago vencido</p>
+                          <p className="text-sm text-red-800">
+                            La fecha límite de pago (<strong>{formatFecha(fechaLimitePago)}</strong>) ha vencido.
+                            Contacta al área administrativa.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Grid de campos clave del incidente */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Aerolínea",        val: datosEx.empresa_responsable?.valor || datosEx.empresa_responsable },
+                        { label: "Aeronave",          val: datosEx.matricula_aeronave?.valor  || datosEx.matricula_aeronave },
+                        { label: "Vuelo",             val: datosEx.numero_vuelo?.valor        || datosEx.numero_vuelo },
+                        { label: "Combustible",       val: datosEx.tipo_combustible?.valor    || datosEx.tipo_combustible },
+                        { label: "Fecha incidente",   val: datosEx.fecha_incidente?.valor     || datosEx.fecha_incidente },
+                        { label: "Hora",              val: datosEx.hora_incidente?.valor      || datosEx.hora_incidente },
+                        { label: "Volumen derramado", val: datosEx.volumen_derrame?.valor     || datosEx.volumen_derrame },
+                        { label: "Tipo de derrame",   val: datosEx.tipo_derrame?.valor        || datosEx.tipo_derrame },
+                      ].filter((f) => f.val).map(({ label, val }) => (
+                        <div key={label} className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+                          <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-0.5">{label}</p>
+                          <p className="text-sm font-semibold text-gray-800 truncate">{val}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Ubicación — fila completa */}
+                    {(datosEx.ubicacion_lugar?.valor || datosEx.ubicacion_lugar) && (
+                      <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-0.5">Ubicación / Posición</p>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {datosEx.ubicacion_lugar?.valor || datosEx.ubicacion_lugar}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Medidas de contención — fila completa */}
+                    {(datosEx.medidas_contencion?.valor || datosEx.medidas_contencion) && (
+                      <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Medidas de Contención (Sección B)</p>
+                        <p className="text-sm text-gray-700 leading-relaxed">
+                          {datosEx.medidas_contencion?.valor || datosEx.medidas_contencion}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Reportado por */}
+                    {(datosEx.reportado_por?.valor || datosEx.reportado_por) && (
+                      <div className="flex items-center justify-between text-[13px] bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+                        <span className="text-gray-500">Reportado por</span>
+                        <span className="font-semibold text-gray-800">{datosEx.reportado_por?.valor || datosEx.reportado_por}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {selectedDoc.datos_extraidos && Object.keys(selectedDoc.datos_extraidos).length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Campos extraídos</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                      {esDerrame ? "Todos los campos extraídos" : "Campos extraídos"}
+                    </p>
                     <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-1">
                       <div className="divide-y divide-gray-100">
                         {Object.entries(selectedDoc.datos_extraidos).map(([k, v]) => {

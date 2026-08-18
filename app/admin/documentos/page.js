@@ -6,7 +6,7 @@ import {
   Trash2, AlertTriangle, X, Activity, HardDrive, Upload,
   Users, Filter, ChevronDown, List, RefreshCw, Clock,
   CheckCircle, AlertCircle, ShieldAlert, FileQuestion,
-  Pencil, Ticket, RotateCcw, LogIn,
+  Pencil, Ticket, RotateCcw, LogIn, Droplets,
 } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { createClient } from "@/app/lib/supabase/client";
@@ -22,6 +22,7 @@ const TIPO_DOC_LABELS = {
   INE:                         "INE",
   DECLARACION_SAT:             "Declaración SAT",
   DECLARACION_ANUAL:           "Declaración Anual",
+  REPORTE_DERRAME:             "Reporte de Derrame",
 };
 
 const TIPO_DOC_FILTER_OPTIONS = ["Todos", ...new Set(Object.values(TIPO_DOC_LABELS))];
@@ -123,6 +124,7 @@ function DocBadge({ tipo }) {
     "Constancia Fiscal":  "bg-teal-100 text-teal-700 border-teal-200",
     "Declaración SAT":    "bg-blue-100 text-blue-700 border-blue-200",
     "Declaración Anual":  "bg-sky-100 text-sky-700 border-sky-200",
+    "Reporte de Derrame": "bg-amber-100 text-amber-700 border-amber-200",
   };
   return (
     <span className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium border ${
@@ -168,7 +170,18 @@ function DetailsModal({ doc, onClose, supabase }) {
   const [timeline,        setTimeline]        = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
 
-  const extracted = Object.entries(doc.datos_extraidos ?? {});
+  const extracted   = Object.entries(doc.datos_extraidos ?? {});
+  const datosEx     = doc.datos_extraidos ?? {};
+  const esDerrame   = (doc.tipo_doc || "").toUpperCase() === "REPORTE_DERRAME";
+  // REPORTE_DERRAME: fecha_limite_pago calculada en backend, guardada en datos_extraidos
+  const fechaLimitePago = esDerrame
+    ? (datosEx.fecha_limite_pago?.valor || datosEx.fecha_limite_pago || null)
+    : null;
+  const pagoVencido  = esDerrame && fechaLimitePago && new Date(fechaLimitePago) < new Date();
+  const pagoDias     = esDerrame && fechaLimitePago
+    ? Math.ceil((new Date(fechaLimitePago) - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+  const pagoProximo  = !pagoVencido && pagoDias !== null && pagoDias <= 10;
 
   // Cargar historial dinámico desde historial_documentos + tickets
   useEffect(() => {
@@ -275,7 +288,16 @@ function DetailsModal({ doc, onClose, supabase }) {
           <div><p className="text-xs text-gray-500 mb-1">Documento</p><DocBadge tipo={doc.tipo_doc} /></div>
           <div><p className="text-xs text-gray-500 mb-1">Descargas</p><p className="font-bold text-sm text-gray-900">{doc.descargas ?? 0}</p></div>
           <div><p className="text-xs text-gray-500 mb-1">Subido</p><p className="font-bold text-sm text-gray-900">{formatDate(doc.creado_en)}</p></div>
-          <div><p className="text-xs text-gray-500 mb-1">Vencimiento</p><p className="font-bold text-sm text-gray-900">{formatDate(doc.fecha_vencimiento)}</p></div>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">{esDerrame ? "Límite de Pago" : "Vencimiento"}</p>
+            <p className={`font-bold text-sm ${
+              esDerrame
+                ? pagoVencido ? "text-red-600" : pagoProximo ? "text-amber-600" : "text-gray-900"
+                : "text-gray-900"
+            }`}>
+              {esDerrame ? formatDate(fechaLimitePago) : formatDate(doc.fecha_vencimiento)}
+            </p>
+          </div>
           <div><p className="text-xs text-gray-500 mb-1">Versión</p><p className="font-bold text-sm text-gray-900">v{doc.version ?? 1}</p></div>
           <div>
             <p className="text-xs text-gray-500 mb-1">Revisión</p>
@@ -306,10 +328,85 @@ function DetailsModal({ doc, onClose, supabase }) {
           </div>
         )}
 
+        {/* ── PANEL REPORTE DE DERRAME ───────────────────────────────────── */}
+        {esDerrame && (
+          <>
+            {/* Alerta de pago */}
+            {(pagoVencido || pagoProximo) && (
+              <div className={`rounded-2xl p-4 flex gap-3 border ${
+                pagoVencido
+                  ? "bg-red-50 border-red-100"
+                  : "bg-amber-50 border-amber-100"
+              }`}>
+                <AlertTriangle size={16} className={`mt-0.5 shrink-0 ${pagoVencido ? "text-red-500" : "text-amber-500"}`} />
+                <div>
+                  <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${pagoVencido ? "text-red-600" : "text-amber-600"}`}>
+                    {pagoVencido ? "Pago vencido" : "Pago próximo a vencer"}
+                  </p>
+                  <p className={`text-sm ${pagoVencido ? "text-red-800" : "text-amber-800"}`}>
+                    {pagoVencido
+                      ? `La fecha límite de pago (${formatDate(fechaLimitePago)}) ha vencido. Requiere atención administrativa.`
+                      : `Quedan ${pagoDias} día${pagoDias !== 1 ? "s" : ""} para el límite de pago (${formatDate(fechaLimitePago)}).`
+                    }
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Grid de campos del incidente */}
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide flex items-center gap-2">
+                <Droplets size={13} className="text-amber-500" /> Datos del Incidente
+              </p>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                {[
+                  { label: "Aerolínea",       val: datosEx.empresa_responsable?.valor || datosEx.empresa_responsable },
+                  { label: "Matrícula",        val: datosEx.matricula_aeronave?.valor  || datosEx.matricula_aeronave  },
+                  { label: "N° de Vuelo",      val: datosEx.numero_vuelo?.valor        || datosEx.numero_vuelo        },
+                  { label: "Combustible",      val: datosEx.tipo_combustible?.valor    || datosEx.tipo_combustible    },
+                  { label: "Fecha incidente",  val: datosEx.fecha_incidente?.valor     || datosEx.fecha_incidente     },
+                  { label: "Hora",             val: datosEx.hora_incidente?.valor      || datosEx.hora_incidente      },
+                  { label: "Volumen derrame",  val: datosEx.volumen_derrame?.valor     || datosEx.volumen_derrame     },
+                  { label: "Tipo de derrame",  val: datosEx.tipo_derrame?.valor        || datosEx.tipo_derrame        },
+                  { label: "Folio informe",    val: datosEx.folio_informe?.valor       || datosEx.folio_informe       },
+                  { label: "Reportado por",    val: datosEx.reportado_por?.valor       || datosEx.reportado_por       },
+                ].filter(f => f.val).map(({ label, val }) => (
+                  <div key={label} className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                    <p className="text-xs text-amber-600 font-medium capitalize mb-0.5">{label}</p>
+                    <p className="font-semibold text-sm text-gray-900 truncate">{val}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Ubicación — ancho completo */}
+              {(datosEx.ubicacion_lugar?.valor || datosEx.ubicacion_lugar) && (
+                <div className="bg-amber-50 rounded-xl p-3 border border-amber-100 mb-2">
+                  <p className="text-xs text-amber-600 font-medium mb-0.5">Ubicación / Posición</p>
+                  <p className="font-semibold text-sm text-gray-900">
+                    {datosEx.ubicacion_lugar?.valor || datosEx.ubicacion_lugar}
+                  </p>
+                </div>
+              )}
+
+              {/* Medidas de contención — ancho completo */}
+              {(datosEx.medidas_contencion?.valor || datosEx.medidas_contencion) && (
+                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                  <p className="text-xs text-gray-500 font-medium mb-1">Medidas de contención (Sección B)</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    {datosEx.medidas_contencion?.valor || datosEx.medidas_contencion}
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         {/* Datos extraídos */}
         {extracted.length > 0 && (
           <div>
-            <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">Datos extraídos</p>
+            <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">
+              {esDerrame ? "Todos los campos extraídos" : "Datos extraídos"}
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {extracted.map(([key, val]) => {
                 const display = val && typeof val === "object" && val.valor != null
@@ -520,7 +617,7 @@ export default function DocumentosAdminPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Gestión de Documentos</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Monitorea y administra INE, Pasaportes, Actas, etc.</p>
+            <p className="text-sm text-gray-500 mt-0.5">Monitorea y administra INE, Pasaportes, Actas, Reportes de Derrame y más.</p>
           </div>
           <button onClick={fetchDocuments}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors shadow-sm">
