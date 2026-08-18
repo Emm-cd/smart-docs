@@ -112,13 +112,13 @@ export async function POST(request) {
     .then(async (res) => {
       if (!res.ok) {
         const errText = await res.text();
-        console.error(`❌ FastAPI devolvió status ${res.status}: ${errText}`);
+        console.error(`FastAPI devolvió status ${res.status}: ${errText}`);
       } else {
-        console.log(`✅ FastAPI recibió el documento correctamente (${docData.id})`);
+        console.log(`FastAPI recibió el documento correctamente (${docData.id})`);
       }
     })
     .catch(async (e) => {
-      console.error("❌ No se pudo conectar con FastAPI:", e.message);
+      console.error("No se pudo conectar con FastAPI:", e.message);
       // En caso de que FastAPI esté caído, marcamos el documento con error en Supabase
       await supabase
         .from("documentos")
